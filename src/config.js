@@ -6,9 +6,14 @@ export const Config = {
 	// Simulation Settings
 	cycles: 0,
 	speed: 1,
-	paused: false, // <--- ADD THIS LINE
+	paused: false,
 	photosynthesisRate: 1.0,
 	mutationVolatility: 0.5,
+	
+	// Added: New simulation settings
+	corpseEnergyMultiplier: 1.0,
+	foodSpawnRate: 1,
+	clickAction: 'food',
 	
 	// Initial Spawn Counts
 	INIT_BLUES: 20,

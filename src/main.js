@@ -1,6 +1,8 @@
 import * as PIXI from 'pixi.js';
 import { Config } from './config.js';
 import { World } from './world.js';
+import { Creature } from './creature.js';
+import { Genome } from './genome.js';
 
 const canvasContainer = document.getElementById('canvas-container');
 const app = new PIXI.Application({
@@ -12,9 +14,8 @@ const app = new PIXI.Application({
 canvasContainer.appendChild(app.view);
 
 const world = new World(app);
-let selectedCreature = null;
+let selectedEntity = null;
 
-// Create a graphics object to draw a box around the selected creature
 const selectionBox = new PIXI.Graphics();
 app.stage.addChild(selectionBox);
 
@@ -34,10 +35,18 @@ document.getElementById('set-mutation').addEventListener('input', (e) => {
 	document.getElementById('val-mutation').innerText = Config.mutationVolatility.toFixed(1);
 });
 
-document.getElementById('btn-spawn-food').addEventListener('click', () => {
-	for(let i=0; i<10; i++) {
-		world.spawnFood(Math.floor(Math.random()*Config.GRID_W), Math.floor(Math.random()*Config.GRID_H));
-	}
+document.getElementById('set-corpse-energy').addEventListener('input', (e) => {
+	Config.corpseEnergyMultiplier = parseFloat(e.target.value) / 100;
+	document.getElementById('val-corpse-energy').innerText = e.target.value + '%';
+});
+
+document.getElementById('set-food-rate').addEventListener('input', (e) => {
+	Config.foodSpawnRate = parseFloat(e.target.value);
+	document.getElementById('val-food-rate').innerText = e.target.value;
+});
+
+document.getElementById('set-click-action').addEventListener('change', (e) => {
+	Config.clickAction = e.target.value;
 });
 
 document.getElementById('btn-play').addEventListener('click', () => {
@@ -51,15 +60,13 @@ document.getElementById('btn-pause').addEventListener('click', () => {
 document.getElementById('btn-reset').addEventListener('click', () => {
 	world.reset();
 	Config.cycles = 0;
-	selectedCreature = null;
-	document.getElementById('inspector-content').innerHTML = '<p>Select a creature on the map.</p>';
+	selectedEntity = null;
+	document.getElementById('inspector-content').innerHTML = '<p>Select an entity on the map.</p>';
 });
 
-// Fixed Click Logic
 app.view.addEventListener('mousedown', (e) => {
 	const rect = app.view.getBoundingClientRect();
 	
-	// Use LOGICAL width/height, not app.view.width (which is affected by devicePixelRatio)
 	const logicalWidth = Config.GRID_W * Config.CELL_SIZE;
 	const logicalHeight = Config.GRID_H * Config.CELL_SIZE;
 	
@@ -72,23 +79,55 @@ app.view.addEventListener('mousedown', (e) => {
 	const gridX = Math.floor(clickX / Config.CELL_SIZE);
 	const gridY = Math.floor(clickY / Config.CELL_SIZE);
 	
-	// Find the CLOSEST creature within a 5-tile radius (makes clicking much easier)
-	let closestCreature = null;
-	let minDistance = 6; // Max distance to register a click
+	let closestEntity = null;
+	let minDistance = 6;
 	
 	for (let c of world.creatures) {
-		// Calculate distance in grid cells
 		let dist = Math.max(Math.abs(c.x - gridX), Math.abs(c.y - gridY));
 		if (dist < minDistance) {
 			minDistance = dist;
-			closestCreature = c;
+			closestEntity = c;
 		}
 	}
 	
-	selectedCreature = closestCreature;
+	for (let c of world.corpses) {
+		let dist = Math.max(Math.abs(c.x - gridX), Math.abs(c.y - gridY));
+		if (dist < minDistance) {
+			minDistance = dist;
+			closestEntity = c;
+		}
+	}
 	
-	if (!selectedCreature) {
-		world.spawnFood(gridX, gridY);
+	for (let f of world.food) {
+		let dist = Math.max(Math.abs(f.x - gridX), Math.abs(f.y - gridY));
+		if (dist < minDistance) {
+			minDistance = dist;
+			closestEntity = f;
+		}
+	}
+	
+	selectedEntity = closestEntity;
+	
+	if (!selectedEntity) {
+		if (Config.clickAction === 'food') {
+			world.spawnFood(gridX, gridY);
+		} else if (Config.clickAction === 'red') {
+			// Modified: Check if tile is occupied before manual spawn
+			if (!world.grid[gridX][gridY].occupied) {
+				let c = new Creature(gridX, gridY, 'red', Genome.createBaseRed());
+				world.creatures.push(c);
+				world.container.addChild(c.sprite);
+				world.grid[gridX][gridY].occupied = true;
+			}
+		} else if (Config.clickAction === 'blue') {
+			// Modified: Check if tile is occupied before manual spawn
+			if (!world.grid[gridX][gridY].occupied) {
+				let c = new Creature(gridX, gridY, 'blue', Genome.createBaseBlue());
+				world.creatures.push(c);
+				world.container.addChild(c.sprite);
+				world.grid[gridX][gridY].occupied = true;
+			}
+		}
 	}
 	
 	updateInspector();
@@ -96,41 +135,54 @@ app.view.addEventListener('mousedown', (e) => {
 
 function updateInspector() {
 	const panel = document.getElementById('inspector-content');
-	if (!selectedCreature) {
-		panel.innerHTML = '<p>Select a creature on the map.</p>';
+	if (!selectedEntity) {
+		panel.innerHTML = '<p>Select an entity on the map.</p>';
 		return;
 	}
 	
-	let status = selectedCreature.isDead ? '<span style="color:red;">(DEAD)</span>' : '';
+	if (selectedEntity.isCorpse) {
+		panel.innerHTML = `
+			<p><strong>Type:</strong> <span style="color:#888;">Corpse</span></p>
+			<p><strong>Energy:</strong> ${Math.floor(selectedEntity.energy)}</p>
+		`;
+		return;
+	}
 	
-	// Added Generation to the HTML block
+	if (selectedEntity.isFood) {
+		panel.innerHTML = `
+			<p><strong>Type:</strong> <span style="color:#55ff55;">Food</span></p>
+			<p><strong>Energy:</strong> 50</p>
+		`;
+		return;
+	}
+	
+	let status = selectedEntity.isDead ? '<span style="color:red;">(DEAD)</span>' : '';
+	
 	let html = `
-        <p><strong>ID:</strong> ${selectedCreature.id} ${status}</p>
-        <p><strong>Faction:</strong> <span style="color:${selectedCreature.faction==='blue'?'#4da6ff':'#ff4d4d'}">${selectedCreature.faction.toUpperCase()}</span></p>
-        <p><strong>Generation:</strong> ${selectedCreature.generation}</p>
-        <p><strong>Age:</strong> ${selectedCreature.age}</p>
-        <p><strong>Energy:</strong> ${Math.floor(selectedCreature.energy)}</p>
-        <p><strong>Kills:</strong> ${selectedCreature.kills}</p>
-        <hr style="border-color:#444; margin: 10px 0;">
-        <p><strong>Genome:</strong></p>
-    `;
+		<p><strong>ID:</strong> ${selectedEntity.id} ${status}</p>
+		<p><strong>Faction:</strong> <span style="color:${selectedEntity.faction==='blue'?'#4da6ff':'#ff4d4d'}">${selectedEntity.faction.toUpperCase()}</span></p>
+		<p><strong>Generation:</strong> ${selectedEntity.generation}</p>
+		<p><strong>Age:</strong> ${selectedEntity.age}</p>
+		<p><strong>Energy:</strong> ${Math.floor(selectedEntity.energy)}</p>
+		<p><strong>Kills:</strong> ${selectedEntity.kills}</p>
+		<hr style="border-color:#444; margin: 10px 0;">
+		<p><strong>Genome:</strong></p>
+	`;
 	
-	for (const [trait, value] of Object.entries(selectedCreature.genome.traits)) {
+	for (const [trait, value] of Object.entries(selectedEntity.genome.traits)) {
 		let percent = ((value + 1) / 2) * 100;
 		let color = value > 0 ? '#55ff55' : '#ff5555';
 		
-		// Format the value to always show 2 decimal places and a + or - sign
 		let displayVal = (value > 0 ? '+' : '') + value.toFixed(2);
 		
-		// Added the displayVal inside the genome-label div
 		html += `
-            <div class="genome-bar">
-                <div class="genome-label">${trait} <span style="color:#888;">[${displayVal}]</span></div>
-                <div class="genome-track">
-                    <div class="genome-fill" style="width: ${percent}%; background: ${color};"></div>
-                </div>
-            </div>
-        `;
+			<div class="genome-bar">
+				<div class="genome-label">${trait} <span style="color:#888;">[${displayVal}]</span></div>
+				<div class="genome-track">
+					<div class="genome-fill" style="width: ${percent}%; background: ${color};"></div>
+				</div>
+			</div>
+		`;
 	}
 	panel.innerHTML = html;
 }
@@ -139,7 +191,6 @@ let tickCounter = 0;
 let speedAccumulator = 0;
 
 app.ticker.add(() => {
-	// 1. Update UI Stats every 10 frames (UI updates even when paused)
 	if (tickCounter % 10 === 0) {
 		document.getElementById('stat-fps').innerText = Math.floor(app.ticker.FPS);
 		let blues = world.creatures.filter(c => c.faction === 'blue').length;
@@ -147,11 +198,10 @@ app.ticker.add(() => {
 		document.getElementById('stat-blues').innerText = blues;
 		document.getElementById('stat-reds').innerText = reds;
 		document.getElementById('stat-cycle').innerText = Config.cycles;
-		if(selectedCreature) updateInspector();
+		if(selectedEntity) updateInspector();
 	}
 	tickCounter++;
 	
-	// 2. Fractional Speed Logic (ONLY run if not paused)
 	if (!Config.paused) {
 		speedAccumulator += Config.speed;
 		
@@ -162,13 +212,12 @@ app.ticker.add(() => {
 		}
 	}
 	
-	// 3. Draw Selection Box
 	selectionBox.clear();
-	if (selectedCreature && !selectedCreature.isDead) {
-		selectionBox.lineStyle(1, 0xFFFFFF, 1); // White border
+	if (selectedEntity) {
+		selectionBox.lineStyle(1, 0xFFFFFF, 1);
 		selectionBox.drawRect(
-			selectedCreature.x * Config.CELL_SIZE - 2,
-			selectedCreature.y * Config.CELL_SIZE - 2,
+			selectedEntity.x * Config.CELL_SIZE - 2,
+			selectedEntity.y * Config.CELL_SIZE - 2,
 			Config.CELL_SIZE + 4,
 			Config.CELL_SIZE + 4
 		);

@@ -26,6 +26,12 @@ h3 { color: #aaa; font-size: 14px; text-transform: uppercase; margin-bottom: 10p
 label { display: block; font-size: 12px; margin-top: 10px; color: #bbb; }
 input[type="range"] { width: 100%; margin-top: 5px; cursor: pointer; }
 
+/* Added styling for dropdowns */
+select {
+    width: 100%; padding: 5px; margin-top: 5px;
+    background: #333; color: #fff; border: 1px solid #555; border-radius: 4px; cursor: pointer;
+}
+
 button {
     width: 100%; padding: 10px; margin-top: 15px;
     background: #4da6ff; color: #000; border: none; border-radius: 4px;
@@ -59,15 +65,14 @@ button:hover { background: #3388dd; }
 .genome-track { flex-grow: 1; height: 8px; background: #444; position: relative; border-radius: 4px; }
 .genome-fill { height: 100%; position: absolute; border-radius: 4px; }
 
-/* Add these to the bottom of src/style.css */
+/* Modified: Changed button-group to accommodate 3 buttons */
 .button-group { display: flex; gap: 10px; margin-top: 15px; }
-.button-group button { margin-top: 0; }
+.button-group button { margin-top: 0; flex: 1; }
 .btn-success { background: #55ff55; color: #000; }
 .btn-success:hover { background: #33dd33; }
 .btn-warning { background: #ffcc00; color: #000; }
 .btn-warning:hover { background: #ddaa00; }
-.btn-danger { background: #ff4d4d; color: #fff; margin-top: 10px; }
+.btn-danger { background: #ff4d4d; color: #fff; }
 .btn-danger:hover { background: #dd3333; }
 
 .genome-label { width: 150px; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-

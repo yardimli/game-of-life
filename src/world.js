@@ -17,8 +17,9 @@ export class World {
 		this.corpses = [];
 		this.spawnQueue = [];
 		
+		// Added: `occupied` boolean to track if a creature is currently on this tile
 		this.grid = Array.from({ length: Config.GRID_W }, () =>
-			Array.from({ length: Config.GRID_H }, () => ({ n: 0, f: 0, d: 0 }))
+			Array.from({ length: Config.GRID_H }, () => ({ n: 0, f: 0, d: 0, occupied: false }))
 		);
 		
 		this.initSpawns();
@@ -26,19 +27,39 @@ export class World {
 	
 	initSpawns() {
 		for(let i=0; i<Config.INIT_BLUES; i++) {
-			let x = Math.floor(Math.random() * (Config.GRID_W / 3));
-			let y = Math.floor(Math.random() * Config.GRID_H);
-			let c = new Creature(x, y, 'blue', Genome.createBaseBlue());
-			this.creatures.push(c);
-			this.container.addChild(c.sprite);
+			let x, y;
+			let attempts = 0;
+			// Modified: Ensure we don't spawn on an already occupied tile
+			do {
+				x = Math.floor(Math.random() * (Config.GRID_W / 3));
+				y = Math.floor(Math.random() * Config.GRID_H);
+				attempts++;
+			} while(this.grid[x][y].occupied && attempts < 50);
+			
+			if (!this.grid[x][y].occupied) {
+				this.grid[x][y].occupied = true;
+				let c = new Creature(x, y, 'blue', Genome.createBaseBlue());
+				this.creatures.push(c);
+				this.container.addChild(c.sprite);
+			}
 		}
 		
 		for(let i=0; i<Config.INIT_REDS; i++) {
-			let x = Math.floor(Config.GRID_W * 0.66) + Math.floor(Math.random() * (Config.GRID_W / 3));
-			let y = Math.floor(Math.random() * Config.GRID_H);
-			let c = new Creature(x, y, 'red', Genome.createBaseRed());
-			this.creatures.push(c);
-			this.container.addChild(c.sprite);
+			let x, y;
+			let attempts = 0;
+			// Modified: Ensure we don't spawn on an already occupied tile
+			do {
+				x = Math.floor(Config.GRID_W * 0.66) + Math.floor(Math.random() * (Config.GRID_W / 3));
+				y = Math.floor(Math.random() * Config.GRID_H);
+				attempts++;
+			} while(this.grid[x][y].occupied && attempts < 50);
+			
+			if (!this.grid[x][y].occupied) {
+				this.grid[x][y].occupied = true;
+				let c = new Creature(x, y, 'red', Genome.createBaseRed());
+				this.creatures.push(c);
+				this.container.addChild(c.sprite);
+			}
 		}
 	}
 	
@@ -57,7 +78,7 @@ export class World {
 		sprite.x = x * Config.CELL_SIZE;
 		sprite.y = y * Config.CELL_SIZE;
 		
-		this.food.push({ x, y, sprite });
+		this.food.push({ x, y, sprite, isFood: true });
 		this.container.addChild(sprite);
 	}
 	
@@ -81,8 +102,12 @@ export class World {
 		
 		this.creatures = this.creatures.filter(c => !c.isDead);
 		
-		if (Math.random() < 0.05) {
-			this.spawnFood(Math.floor(Math.random()*Config.GRID_W), Math.floor(Math.random()*Config.GRID_H));
+		let spawns = Math.floor(Config.foodSpawnRate);
+		if (Math.random() < (Config.foodSpawnRate % 1)) {
+			spawns++;
+		}
+		for (let i = 0; i < spawns; i++) {
+			this.spawnFood(Math.floor(Math.random() * Config.GRID_W), Math.floor(Math.random() * Config.GRID_H));
 		}
 		
 		this.renderPheromones();
@@ -107,27 +132,22 @@ export class World {
 	}
 	
 	reset() {
-		// 1. Clear arrays
 		this.creatures = [];
 		this.food = [];
 		this.corpses = [];
 		this.spawnQueue = [];
 		
-		// 2. Clear Pheromone Grid
+		// Modified: Reset the occupied flag as well
 		for(let x=0; x<Config.GRID_W; x++) {
 			for(let y=0; y<Config.GRID_H; y++) {
-				this.grid[x][y] = { n: 0, f: 0, d: 0 };
+				this.grid[x][y] = { n: 0, f: 0, d: 0, occupied: false };
 			}
 		}
 		
-		// 3. Clear PixiJS Container (Remove all sprites)
 		this.container.removeChildren();
-		
-		// 4. Re-add the pheromone graphics layer
 		this.pheroGraphics.clear();
 		this.container.addChild(this.pheroGraphics);
 		
-		// 5. Spawn fresh creatures
 		this.initSpawns();
 	}
 }
