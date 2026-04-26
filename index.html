@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>EvoGrid: Red vs Blue</title>
+	<!-- Link CSS directly here -->
+	<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<div id="game-container">
+	<!-- Left Panel: UI -->
+	<div id="left-panel">
+		<h1>EvoGrid</h1>
+		
+		<div class="panel-section">
+			<h3>Global Stats</h3>
+			<p>Cycle: <span id="stat-cycle">0</span></p>
+			<p>Blues: <span id="stat-blues" style="color: #4da6ff;">0</span> | Reds: <span id="stat-reds" style="color: #ff4d4d;">0</span></p>
+			<p>FPS: <span id="stat-fps">0</span></p>
+		</div>
+		
+		<div class="panel-section">
+			<h3>Simulation Controls</h3>
+			<div class="button-group">
+				<button id="btn-play" class="btn-success">Play</button>
+				<button id="btn-pause" class="btn-warning">Pause</button>
+			</div>
+			<button id="btn-reset" class="btn-danger">Reset Game</button>
+			
+			<hr style="border-color:#444; margin: 15px 0;">
+			
+			<label>Clock Speed: <span id="val-speed">1.0</span>x</label>
+			<input type="range" id="set-speed" min="0.1" max="5" step="0.1" value="1">
+			
+			<label>Photosynthesis Energy:</label>
+			<input type="range" id="set-photo" min="0" max="5" step="0.1" value="1">
+			
+			<label>Mutation Volatility:</label>
+			<input type="range" id="set-mutation" min="0" max="2" step="0.1" value="0.5">
+			
+			<button id="btn-spawn-food">Spawn Random Food</button>
+			<p class="hint">Hint: Click the map to drop food.</p>
+		</div>
+		
+		<div class="panel-section" id="inspector">
+			<h3>Selected Creature</h3>
+			<div id="inspector-content">
+				<p>Select a creature on the map.</p>
+			</div>
+		</div>
+	</div>
+	
+	<!-- Right Panel: PixiJS Canvas -->
+	<div id="canvas-container"></div>
+</div>
+
+<!-- Main Game Logic -->
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
