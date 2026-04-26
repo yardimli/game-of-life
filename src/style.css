@@ -68,3 +68,6 @@ button:hover { background: #3388dd; }
 .btn-warning:hover { background: #ddaa00; }
 .btn-danger { background: #ff4d4d; color: #fff; margin-top: 10px; }
 .btn-danger:hover { background: #dd3333; }
+
+.genome-label { width: 150px; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+

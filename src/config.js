@@ -11,8 +11,8 @@ export const Config = {
 	mutationVolatility: 0.5,
 	
 	// Initial Spawn Counts
-	INIT_BLUES: 500,
-	INIT_REDS: 100,
+	INIT_BLUES: 20,
+	INIT_REDS: 20,
 	
 	// Colors
 	COLOR_BLUE: 0x4da6ff,

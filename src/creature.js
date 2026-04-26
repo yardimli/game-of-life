@@ -3,12 +3,14 @@ import { Config } from './config.js';
 import { Genome } from './genome.js';
 
 export class Creature {
-	constructor(x, y, faction, genome) {
+	constructor(x, y, faction, genome, generation = 1) {
 		this.id = Math.random().toString(36).substr(2, 9);
 		this.x = x;
 		this.y = y;
 		this.faction = faction;
 		this.genome = genome;
+		
+		this.generation = generation;
 		
 		this.age = 0;
 		this.energy = 100;
@@ -74,11 +76,12 @@ export class Creature {
 		
 		this.interact(world);
 		
+		// Reproduce
 		let reproThresh = 150 + (this.genome.traits.reproThreshold * 50);
 		if (this.energy > reproThresh) {
 			this.energy /= 2;
 			let childGenome = new Genome(this.genome, Config.mutationVolatility);
-			let child = new Creature(this.x, this.y, this.faction, childGenome);
+			let child = new Creature(this.x, this.y, this.faction, childGenome, this.generation + 1);
 			world.spawnQueue.push(child);
 		}
 	}

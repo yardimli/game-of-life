@@ -26,10 +26,12 @@ document.getElementById('set-speed').addEventListener('input', (e) => {
 
 document.getElementById('set-photo').addEventListener('input', (e) => {
 	Config.photosynthesisRate = parseFloat(e.target.value);
+	document.getElementById('val-photo').innerText = Config.photosynthesisRate.toFixed(1);
 });
 
 document.getElementById('set-mutation').addEventListener('input', (e) => {
 	Config.mutationVolatility = parseFloat(e.target.value);
+	document.getElementById('val-mutation').innerText = Config.mutationVolatility.toFixed(1);
 });
 
 document.getElementById('btn-spawn-food').addEventListener('click', () => {
@@ -101,9 +103,11 @@ function updateInspector() {
 	
 	let status = selectedCreature.isDead ? '<span style="color:red;">(DEAD)</span>' : '';
 	
+	// Added Generation to the HTML block
 	let html = `
         <p><strong>ID:</strong> ${selectedCreature.id} ${status}</p>
         <p><strong>Faction:</strong> <span style="color:${selectedCreature.faction==='blue'?'#4da6ff':'#ff4d4d'}">${selectedCreature.faction.toUpperCase()}</span></p>
+        <p><strong>Generation:</strong> ${selectedCreature.generation}</p>
         <p><strong>Age:</strong> ${selectedCreature.age}</p>
         <p><strong>Energy:</strong> ${Math.floor(selectedCreature.energy)}</p>
         <p><strong>Kills:</strong> ${selectedCreature.kills}</p>
@@ -114,9 +118,14 @@ function updateInspector() {
 	for (const [trait, value] of Object.entries(selectedCreature.genome.traits)) {
 		let percent = ((value + 1) / 2) * 100;
 		let color = value > 0 ? '#55ff55' : '#ff5555';
+		
+		// Format the value to always show 2 decimal places and a + or - sign
+		let displayVal = (value > 0 ? '+' : '') + value.toFixed(2);
+		
+		// Added the displayVal inside the genome-label div
 		html += `
             <div class="genome-bar">
-                <div class="genome-label">${trait}</div>
+                <div class="genome-label">${trait} <span style="color:#888;">[${displayVal}]</span></div>
                 <div class="genome-track">
                     <div class="genome-fill" style="width: ${percent}%; background: ${color};"></div>
                 </div>
