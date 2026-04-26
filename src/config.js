@@ -13,7 +13,8 @@ export const Config = {
 	// Added: New simulation settings
 	corpseEnergyMultiplier: 1.0,
 	foodSpawnRate: 1,
-	clickAction: 'food',
+	foodSpawnEnabled: true, // Added: Toggle for random food
+	clickAction: 'select',
 	
 	// Initial Spawn Counts
 	INIT_BLUES: 20,

@@ -17,7 +17,6 @@ export class Creature {
 		this.kills = 0;
 		this.isDead = false;
 		
-		// Added: Track last movement direction for vision cones and search patterns
 		this.lastDx = 0;
 		this.lastDy = 0;
 		
@@ -37,15 +36,20 @@ export class Creature {
 		this.isDead = true;
 		this.sprite.tint = Config.COLOR_CORPSE;
 		
+		// Modified: Clean up spatial grid references
 		world.grid[this.x][this.y].occupied = false;
+		world.grid[this.x][this.y].creature = null;
 		
 		let baseEnergy = 50 + (this.energy * 0.5 * (this.age / 100));
-		world.corpses.push({
+		let corpseObj = {
 			x: this.x, y: this.y,
 			energy: baseEnergy * Config.corpseEnergyMultiplier,
 			sprite: this.sprite,
 			isCorpse: true
-		});
+		};
+		
+		world.corpses.push(corpseObj);
+		world.grid[this.x][this.y].corpseList.push(corpseObj); // Register corpse to spatial grid
 	}
 	
 	update(world) {
@@ -67,9 +71,9 @@ export class Creature {
 		let speedLimit = this.genome.traits.speed > 0 ? 2 : 1;
 		
 		for(let s = 0; s < speedLimit; s++) {
-			let moves = [];
+			let moves =[];
 			
-			// 1. Generate all possible valid moves (including staying still)
+			// 1. Generate all possible valid moves
 			for (let dx = -1; dx <= 1; dx++) {
 				for (let dy = -1; dy <= 1; dy++) {
 					let nx = this.x + dx;
@@ -84,7 +88,6 @@ export class Creature {
 			}
 			
 			// 2. Vision Range Calculation
-			// visionFocus gene: +1.0 -> range 7 (narrow), -1.0 -> range 1 (360 deg)
 			let visRange = Math.round(3 + (this.genome.traits.visionFocus * 4));
 			visRange = Math.max(1, Math.min(7, visRange));
 			
@@ -92,34 +95,38 @@ export class Creature {
 				let dist = Math.max(Math.abs(ex - this.x), Math.abs(ey - this.y));
 				if (dist > visRange || dist === 0) return false;
 				
-				// visionFocus gene: Tunnel vision check
 				if (this.genome.traits.visionFocus > 0 && (this.lastDx !== 0 || this.lastDy !== 0)) {
 					let vx = ex - this.x;
 					let vy = ey - this.y;
 					let dot = (vx * this.lastDx + vy * this.lastDy) / (Math.sqrt(vx*vx+vy*vy) * Math.sqrt(this.lastDx*this.lastDx+this.lastDy*this.lastDy));
-					if (dot < 0.5) return false; // Outside forward cone
+					if (dot < 0.5) return false;
 				}
 				return true;
 			};
 			
 			// 3. Evaluate each valid move based on genes
+			// NEW: Hunger makes creatures more restless
+			let hungerFactor = Math.max(0, 1.0 - (this.energy / 100));
+			let effectiveRestlessness = this.genome.traits.restlessness + hungerFactor;
+			
 			for (let m of moves) {
-				// restlessness gene: Penalize staying still if highly restless
 				if (m.dx === 0 && m.dy === 0) {
-					m.score -= this.genome.traits.restlessness * 10;
+					m.score -= effectiveRestlessness * 10;
+					continue; // Skip pheromones and walls for the tile we are already standing on
 				}
 				
-				// searchPattern gene: Bonus for continuing in the same direction (Cruiser) vs changing (Sweeper)
-				if (m.dx === this.lastDx && m.dy === this.lastDy && (m.dx !== 0 || m.dy !== 0)) {
+				if (m.dx === this.lastDx && m.dy === this.lastDy) {
 					m.score += this.genome.traits.searchPattern * 5;
+				} else if (m.dx === -this.lastDx && m.dy === -this.lastDy) {
+					m.score -= 2; // Penalty for immediately backtracking/vibrating
 				}
 				
-				// thigmotaxis gene: Preference for walls/obstacles
 				let walls = 0;
 				for (let wx = -1; wx <= 1; wx++) {
 					for (let wy = -1; wy <= 1; wy++) {
 						let cx = m.nx + wx;
 						let cy = m.ny + wy;
+						if (cx === this.x && cy === this.y) continue; // Don't count self as a wall
 						if (cx < 0 || cx >= Config.GRID_W || cy < 0 || cy >= Config.GRID_H || world.grid[cx][cy].occupied) {
 							walls++;
 						}
@@ -127,59 +134,82 @@ export class Creature {
 				}
 				m.score += this.genome.traits.thigmotaxis * walls * 2;
 				
-				// neutralPhero, foodPhero, dangerPhero genes: Pheromone responses
 				let cell = world.grid[m.nx][m.ny];
-				m.score += cell.n * this.genome.traits.neutralPhero * 0.2;
-				m.score += cell.f * this.genome.traits.foodPhero * 0.5;
-				m.score += cell.d * this.genome.traits.dangerPhero * 0.5;
+				m.score += cell.n * this.genome.traits.neutralPhero * 0.1; // Reduced weight so it doesn't overpower vision
+				m.score += cell.f * this.genome.traits.foodPhero * 0.3;
+				m.score += cell.d * this.genome.traits.dangerPhero * 0.3;
 			}
 			
-			// 4. Entity Vision Evaluation
-			// Food
-			for (let f of world.food) {
-				if (seeEntity(f.x, f.y)) {
-					let dirX = Math.sign(f.x - this.x);
-					let dirY = Math.sign(f.y - this.y);
-					let dist = Math.max(Math.abs(f.x - this.x), Math.abs(f.y - this.y));
-					// foodPhero gene: Steer towards food
-					let bonus = (this.genome.traits.foodPhero * 20) / dist;
-					for (let m of moves) if (m.dx === dirX && m.dy === dirY) m.score += bonus;
-				}
-			}
+			// 4. Entity Vision Evaluation (Optimized with Dot Products for Pathing)
+			let minX = Math.max(0, this.x - visRange);
+			let maxX = Math.min(Config.GRID_W - 1, this.x + visRange);
+			let minY = Math.max(0, this.y - visRange);
+			let maxY = Math.min(Config.GRID_H - 1, this.y + visRange);
 			
-			// Corpses
-			if (this.genome.traits.predation > -0.5) {
-				for (let c of world.corpses) {
-					if (seeEntity(c.x, c.y)) {
-						let dirX = Math.sign(c.x - this.x);
-						let dirY = Math.sign(c.y - this.y);
-						let dist = Math.max(Math.abs(c.x - this.x), Math.abs(c.y - this.y));
-						// foodPhero gene: Steer towards edible corpses
-						let bonus = (this.genome.traits.foodPhero * 20) / dist;
-						for (let m of moves) if (m.dx === dirX && m.dy === dirY) m.score += bonus;
-					}
-				}
-			}
-			
-			// Creatures
-			for (let other of world.creatures) {
-				if (other.isDead || other === this) continue;
-				if (seeEntity(other.x, other.y)) {
-					let dirX = Math.sign(other.x - this.x);
-					let dirY = Math.sign(other.y - this.y);
-					let dist = Math.max(Math.abs(other.x - this.x), Math.abs(other.y - this.y));
+			for (let cx = minX; cx <= maxX; cx++) {
+				for (let cy = minY; cy <= maxY; cy++) {
+					if (!seeEntity(cx, cy)) continue;
 					
-					if (other.faction === this.faction) {
-						// herding gene: Move towards friends
-						let bonus = (this.genome.traits.herding * 15) / dist;
-						for (let m of moves) if (m.dx === dirX && m.dy === dirY) m.score += bonus;
-					} else {
-						// aggression gene: Move towards enemies (if > 0) or away (if < 0)
-						let bonus = (this.genome.traits.aggression * 25) / dist;
+					let cell = world.grid[cx][cy];
+					
+					// Food
+					for (let f of cell.foodList) {
+						let dirX = Math.sign(f.x - this.x);
+						let dirY = Math.sign(f.y - this.y);
+						let dist = Math.max(Math.abs(f.x - this.x), Math.abs(f.y - this.y));
+						let bonus = (this.genome.traits.foodPhero * 20) / dist;
 						for (let m of moves) {
-							if (m.dx === dirX && m.dy === dirY) m.score += bonus;
-							// Fleeing: Give a bonus for moving in the opposite direction
-							if (this.genome.traits.aggression < 0 && m.dx === -dirX && m.dy === -dirY) m.score -= bonus;
+							if (m.dx === 0 && m.dy === 0) continue;
+							let dot = (m.dx * dirX) + (m.dy * dirY);
+							if (dot > 0) m.score += bonus * dot; // Rewards any move in the general direction
+						}
+					}
+					
+					// Corpses
+					if (this.genome.traits.predation > -0.5) {
+						for (let c of cell.corpseList) {
+							let dirX = Math.sign(c.x - this.x);
+							let dirY = Math.sign(c.y - this.y);
+							let dist = Math.max(Math.abs(c.x - this.x), Math.abs(c.y - this.y));
+							let bonus = (this.genome.traits.foodPhero * 20) / dist;
+							for (let m of moves) {
+								if (m.dx === 0 && m.dy === 0) continue;
+								let dot = (m.dx * dirX) + (m.dy * dirY);
+								if (dot > 0) m.score += bonus * dot;
+							}
+						}
+					}
+					
+					// Creatures
+					let other = cell.creature;
+					if (other && !other.isDead && other !== this) {
+						let dirX = Math.sign(other.x - this.x);
+						let dirY = Math.sign(other.y - this.y);
+						let dist = Math.max(Math.abs(other.x - this.x), Math.abs(other.y - this.y));
+						
+						if (other.faction === this.faction) {
+							let bonus = (this.genome.traits.herding * 15) / dist;
+							for (let m of moves) {
+								if (m.dx === 0 && m.dy === 0) continue;
+								let dot = (m.dx * dirX) + (m.dy * dirY);
+								if (dot > 0) m.score += bonus * dot;
+							}
+						} else {
+							let bonus = (this.genome.traits.aggression * 25) / dist;
+							for (let m of moves) {
+								if (m.dx === 0 && m.dy === 0) continue;
+								let dot = (m.dx * dirX) + (m.dy * dirY);
+								
+								if (this.genome.traits.aggression >= 0) {
+									// Aggressive: move toward
+									if (dot > 0) m.score += bonus * dot;
+									if (dot < 0) m.score -= bonus * Math.abs(dot);
+								} else {
+									// Fleeing: move away
+									if (dot < 0) m.score += Math.abs(bonus) * Math.abs(dot);
+									if (dot > 0) m.score -= Math.abs(bonus) * dot;
+								}
+							}
 						}
 					}
 				}
@@ -187,16 +217,19 @@ export class Creature {
 			
 			// 5. Pick the best move
 			if (moves.length > 0) {
-				// Add slight randomness to break ties
 				moves.forEach(m => m.score += Math.random() * 0.1);
 				moves.sort((a, b) => b.score - a.score);
 				let best = moves[0];
 				
 				if (best.dx !== 0 || best.dy !== 0) {
 					world.grid[this.x][this.y].occupied = false;
+					world.grid[this.x][this.y].creature = null;
+					
 					this.x = best.nx;
 					this.y = best.ny;
+					
 					world.grid[this.x][this.y].occupied = true;
+					world.grid[this.x][this.y].creature = this;
 					
 					this.lastDx = best.dx;
 					this.lastDy = best.dy;
@@ -228,14 +261,16 @@ export class Creature {
 						if (!world.grid[nx][ny].occupied) {
 							this.energy /= 2;
 							
-							// mutationRate gene: Modifies the global mutation volatility
 							let mutRate = Config.mutationVolatility * Math.max(0.1, 1.0 + this.genome.traits.mutationRate);
 							let childGenome = new Genome(this.genome, mutRate);
 							
 							let child = new Creature(nx, ny, this.faction, childGenome, this.generation + 1);
 							
 							world.spawnQueue.push(child);
+							
 							world.grid[nx][ny].occupied = true;
+							world.grid[nx][ny].creature = child;
+							
 							spawned = true;
 							break;
 						}
@@ -247,64 +282,82 @@ export class Creature {
 	}
 	
 	interact(world) {
-		// altruism gene: Determine how much of the food source is consumed (10% to 100%)
 		let consumeRatio = 1.0 - Math.max(0, this.genome.traits.altruism * 0.9);
 		
-		for (let i = world.food.length - 1; i >= 0; i--) {
-			let f = world.food[i];
-			if (Math.abs(f.x - this.x) <= 1 && Math.abs(f.y - this.y) <= 1) {
-				f.energy = f.energy || 50; // Initialize food energy if not present
-				let amount = f.energy * consumeRatio;
+		// Added: Flags to prevent interacting with multiple entities in a single tick
+		let interactedFood = false;
+		let interactedCorpse = false;
+		let interactedCreature = false;
+		
+		// Modified: Localized 3x3 grid search instead of looping all entities (O(1) instead of O(N))
+		let minX = Math.max(0, this.x - 1);
+		let maxX = Math.min(Config.GRID_W - 1, this.x + 1);
+		let minY = Math.max(0, this.y - 1);
+		let maxY = Math.min(Config.GRID_H - 1, this.y + 1);
+		
+		for (let cx = minX; cx <= maxX; cx++) {
+			for (let cy = minY; cy <= maxY; cy++) {
+				let cell = world.grid[cx][cy];
 				
-				this.energy += amount;
-				f.energy -= amount;
-				
-				if (f.energy <= 5) {
-					world.container.removeChild(f.sprite);
-					world.food.splice(i, 1);
+				// Food
+				if (!interactedFood && cell.foodList.length > 0) {
+					for (let i = cell.foodList.length - 1; i >= 0; i--) {
+						let f = cell.foodList[i];
+						f.energy = f.energy || 50;
+						let amount = f.energy * consumeRatio;
+						
+						this.energy += amount;
+						f.energy -= amount;
+						
+						if (f.energy <= 5) {
+							world.container.removeChild(f.sprite);
+							world.food.splice(world.food.indexOf(f), 1);
+							cell.foodList.splice(i, 1); // Remove from spatial grid
+						}
+						
+						if (this.genome.traits.emitFood > 0) world.addPheromone(this.x, this.y, 'food', 20);
+						interactedFood = true;
+						break;
+					}
 				}
 				
-				if (this.genome.traits.emitFood > 0) world.addPheromone(this.x, this.y, 'food', 20);
-				break;
-			}
-		}
-		
-		if (this.genome.traits.predation > -0.5) {
-			for (let i = world.corpses.length - 1; i >= 0; i--) {
-				let c = world.corpses[i];
-				if (Math.abs(c.x - this.x) <= 1 && Math.abs(c.y - this.y) <= 1) {
-					let amount = c.energy * consumeRatio;
-					
-					this.energy += amount;
-					c.energy -= amount;
-					
-					if (c.energy <= 5) {
-						world.container.removeChild(c.sprite);
-						world.corpses.splice(i, 1);
+				// Corpses
+				if (this.genome.traits.predation > -0.5 && !interactedCorpse && cell.corpseList.length > 0) {
+					for (let i = cell.corpseList.length - 1; i >= 0; i--) {
+						let c = cell.corpseList[i];
+						let amount = c.energy * consumeRatio;
+						
+						this.energy += amount;
+						c.energy -= amount;
+						
+						if (c.energy <= 5) {
+							world.container.removeChild(c.sprite);
+							world.corpses.splice(world.corpses.indexOf(c), 1);
+							cell.corpseList.splice(i, 1); // Remove from spatial grid
+						}
+						interactedCorpse = true;
+						break;
 					}
-					break;
 				}
-			}
-		}
-		
-		if (this.genome.traits.aggression > 0) {
-			for (let other of world.creatures) {
-				if (other.isDead || other.faction === this.faction) continue;
-				if (Math.abs(other.x - this.x) <= 1 && Math.abs(other.y - this.y) <= 1) {
-					let dmg = 20 + (this.genome.traits.aggression * 10) - (other.genome.traits.armor * 10);
-					other.energy -= Math.max(5, dmg);
-					
-					// emitDanger gene: Emits danger pheromones when hurt
-					if (other.genome.traits.emitDanger > 0) {
-						world.addPheromone(other.x, other.y, 'danger', other.genome.traits.emitDanger * 50);
+				
+				// Creatures
+				if (this.genome.traits.aggression > 0 && !interactedCreature) {
+					let other = cell.creature;
+					if (other && !other.isDead && other.faction !== this.faction) {
+						let dmg = 20 + (this.genome.traits.aggression * 10) - (other.genome.traits.armor * 10);
+						other.energy -= Math.max(5, dmg);
+						
+						if (other.genome.traits.emitDanger > 0) {
+							world.addPheromone(other.x, other.y, 'danger', other.genome.traits.emitDanger * 50);
+						}
+						
+						if (other.energy <= 0) {
+							this.kills++;
+							if(this.genome.traits.emitFood > 0) world.addPheromone(this.x, this.y, 'food', 30);
+						}
+						world.showFight(this.x, this.y);
+						interactedCreature = true;
 					}
-					
-					if (other.energy <= 0) {
-						this.kills++;
-						if(this.genome.traits.emitFood > 0) world.addPheromone(this.x, this.y, 'food', 30);
-					}
-					world.showFight(this.x, this.y);
-					break;
 				}
 			}
 		}

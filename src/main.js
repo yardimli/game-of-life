@@ -19,6 +19,10 @@ let selectedEntity = null;
 const selectionBox = new PIXI.Graphics();
 app.stage.addChild(selectionBox);
 
+const hoverBox = new PIXI.Graphics();
+app.stage.addChild(hoverBox);
+let isDrawing = false;
+
 // UI Bindings
 document.getElementById('set-speed').addEventListener('input', (e) => {
 	Config.speed = parseFloat(e.target.value);
@@ -40,9 +44,33 @@ document.getElementById('set-corpse-energy').addEventListener('input', (e) => {
 	document.getElementById('val-corpse-energy').innerText = e.target.value + '%';
 });
 
+// Added: Helper to format food rate display
+function updateFoodRateDisplay(val) {
+	if (val < 1) {
+		document.getElementById('val-food-rate').innerText = `1 every ${Math.round(1 / val)} turns`;
+	} else {
+		document.getElementById('val-food-rate').innerText = `${val.toFixed(2)} / turn`;
+	}
+}
+
+// Modified: Handle new food rate scale
 document.getElementById('set-food-rate').addEventListener('input', (e) => {
 	Config.foodSpawnRate = parseFloat(e.target.value);
-	document.getElementById('val-food-rate').innerText = e.target.value;
+	updateFoodRateDisplay(Config.foodSpawnRate);
+});
+
+// Added: Toggle logic for food spawning
+document.getElementById('btn-toggle-food').addEventListener('click', (e) => {
+	Config.foodSpawnEnabled = !Config.foodSpawnEnabled;
+	if (Config.foodSpawnEnabled) {
+		e.target.innerText = "ON";
+		e.target.classList.remove('btn-danger');
+		e.target.classList.add('btn-success');
+	} else {
+		e.target.innerText = "OFF";
+		e.target.classList.remove('btn-success');
+		e.target.classList.add('btn-danger');
+	}
 });
 
 document.getElementById('set-click-action').addEventListener('change', (e) => {
@@ -64,9 +92,15 @@ document.getElementById('btn-reset').addEventListener('click', () => {
 	document.getElementById('inspector-content').innerHTML = '<p>Select an entity on the map.</p>';
 });
 
-app.view.addEventListener('mousedown', (e) => {
+document.getElementById('btn-clear').addEventListener('click', () => {
+	world.clearMap();
+	Config.cycles = 0;
+	selectedEntity = null;
+	document.getElementById('inspector-content').innerHTML = '<p>Select an entity on the map.</p>';
+});
+
+function getGridCoords(e) {
 	const rect = app.view.getBoundingClientRect();
-	
 	const logicalWidth = Config.GRID_W * Config.CELL_SIZE;
 	const logicalHeight = Config.GRID_H * Config.CELL_SIZE;
 	
@@ -76,62 +110,72 @@ app.view.addEventListener('mousedown', (e) => {
 	const clickX = (e.clientX - rect.left) * scaleX;
 	const clickY = (e.clientY - rect.top) * scaleY;
 	
-	const gridX = Math.floor(clickX / Config.CELL_SIZE);
-	const gridY = Math.floor(clickY / Config.CELL_SIZE);
+	return {
+		x: Math.max(0, Math.min(Config.GRID_W - 1, Math.floor(clickX / Config.CELL_SIZE))),
+		y: Math.max(0, Math.min(Config.GRID_H - 1, Math.floor(clickY / Config.CELL_SIZE)))
+	};
+}
+
+app.view.addEventListener('mousemove', (e) => {
+	const coords = getGridCoords(e);
 	
-	let closestEntity = null;
-	let minDistance = 6;
+	hoverBox.clear();
+	hoverBox.lineStyle(1, 0xffffff, 0.8);
+	hoverBox.drawRect(coords.x * Config.CELL_SIZE, coords.y * Config.CELL_SIZE, Config.CELL_SIZE, Config.CELL_SIZE);
 	
-	for (let c of world.creatures) {
-		let dist = Math.max(Math.abs(c.x - gridX), Math.abs(c.y - gridY));
-		if (dist < minDistance) {
-			minDistance = dist;
-			closestEntity = c;
-		}
+	if (isDrawing) {
+		applyBrush(coords.x, coords.y, true);
 	}
-	
-	for (let c of world.corpses) {
-		let dist = Math.max(Math.abs(c.x - gridX), Math.abs(c.y - gridY));
-		if (dist < minDistance) {
-			minDistance = dist;
-			closestEntity = c;
-		}
-	}
-	
-	for (let f of world.food) {
-		let dist = Math.max(Math.abs(f.x - gridX), Math.abs(f.y - gridY));
-		if (dist < minDistance) {
-			minDistance = dist;
-			closestEntity = f;
-		}
-	}
-	
-	selectedEntity = closestEntity;
-	
-	if (!selectedEntity) {
-		if (Config.clickAction === 'food') {
-			world.spawnFood(gridX, gridY);
-		} else if (Config.clickAction === 'red') {
-			// Modified: Check if tile is occupied before manual spawn
-			if (!world.grid[gridX][gridY].occupied) {
-				let c = new Creature(gridX, gridY, 'red', Genome.createBaseRed());
-				world.creatures.push(c);
-				world.container.addChild(c.sprite);
-				world.grid[gridX][gridY].occupied = true;
-			}
-		} else if (Config.clickAction === 'blue') {
-			// Modified: Check if tile is occupied before manual spawn
-			if (!world.grid[gridX][gridY].occupied) {
-				let c = new Creature(gridX, gridY, 'blue', Genome.createBaseBlue());
-				world.creatures.push(c);
-				world.container.addChild(c.sprite);
-				world.grid[gridX][gridY].occupied = true;
-			}
-		}
-	}
-	
-	updateInspector();
 });
+
+app.view.addEventListener('mousedown', (e) => {
+	isDrawing = true;
+	const coords = getGridCoords(e);
+	applyBrush(coords.x, coords.y, false);
+});
+
+app.view.addEventListener('mouseup', () => { isDrawing = false; });
+app.view.addEventListener('mouseleave', () => {
+	isDrawing = false;
+	hoverBox.clear();
+});
+
+function applyBrush(gridX, gridY, isDrag) {
+	if (Config.clickAction === 'select') {
+		if (!isDrag) {
+			let cell = world.grid[gridX][gridY];
+			selectedEntity = cell.creature || cell.corpseList[0] || cell.foodList[0] || null;
+			updateInspector();
+		}
+		return;
+	}
+	
+	if (Config.clickAction === 'blank') {
+		world.clearCell(gridX, gridY);
+	} else if (Config.clickAction === 'food') {
+		if (world.grid[gridX][gridY].foodList.length === 0) {
+			world.spawnFood(gridX, gridY);
+		}
+	} else if (Config.clickAction === 'red') {
+		if (!world.grid[gridX][gridY].occupied) {
+			let c = new Creature(gridX, gridY, 'red', Genome.createBaseRed());
+			world.creatures.push(c);
+			world.container.addChild(c.sprite);
+			
+			world.grid[gridX][gridY].occupied = true;
+			world.grid[gridX][gridY].creature = c;
+		}
+	} else if (Config.clickAction === 'blue') {
+		if (!world.grid[gridX][gridY].occupied) {
+			let c = new Creature(gridX, gridY, 'blue', Genome.createBaseBlue());
+			world.creatures.push(c);
+			world.container.addChild(c.sprite);
+			
+			world.grid[gridX][gridY].occupied = true;
+			world.grid[gridX][gridY].creature = c;
+		}
+	}
+}
 
 function updateInspector() {
 	const panel = document.getElementById('inspector-content');
@@ -190,6 +234,9 @@ function updateInspector() {
 let tickCounter = 0;
 let speedAccumulator = 0;
 
+// Initialize the food rate display on load
+updateFoodRateDisplay(Config.foodSpawnRate);
+
 app.ticker.add(() => {
 	if (tickCounter % 10 === 0) {
 		document.getElementById('stat-fps').innerText = Math.floor(app.ticker.FPS);
@@ -213,7 +260,7 @@ app.ticker.add(() => {
 	}
 	
 	selectionBox.clear();
-	if (selectedEntity) {
+	if (selectedEntity && !selectedEntity.isDead && selectedEntity.sprite.parent) {
 		selectionBox.lineStyle(1, 0xFFFFFF, 1);
 		selectionBox.drawRect(
 			selectedEntity.x * Config.CELL_SIZE - 2,
