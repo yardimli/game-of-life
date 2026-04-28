@@ -44,7 +44,6 @@ document.getElementById('set-corpse-energy').addEventListener('input', (e) => {
 	document.getElementById('val-corpse-energy').innerText = e.target.value + '%';
 });
 
-// Added: Helper to format food rate display
 function updateFoodRateDisplay(val) {
 	if (val < 1) {
 		document.getElementById('val-food-rate').innerText = `1 every ${Math.round(1 / val)} turns`;
@@ -53,13 +52,11 @@ function updateFoodRateDisplay(val) {
 	}
 }
 
-// Modified: Handle new food rate scale
 document.getElementById('set-food-rate').addEventListener('input', (e) => {
 	Config.foodSpawnRate = parseFloat(e.target.value);
 	updateFoodRateDisplay(Config.foodSpawnRate);
 });
 
-// Added: Toggle logic for food spawning
 document.getElementById('btn-toggle-food').addEventListener('click', (e) => {
 	Config.foodSpawnEnabled = !Config.foodSpawnEnabled;
 	if (Config.foodSpawnEnabled) {
@@ -73,8 +70,20 @@ document.getElementById('btn-toggle-food').addEventListener('click', (e) => {
 	}
 });
 
-document.getElementById('set-click-action').addEventListener('change', (e) => {
-	Config.clickAction = e.target.value;
+// Added: Tool selection logic for the canvas overlay buttons
+let currentTool = null;
+const tools = ['food', 'red', 'blue'];
+tools.forEach(tool => {
+	document.getElementById(`tool-${tool}`).addEventListener('click', (e) => {
+		if (currentTool === tool) {
+			currentTool = null;
+			e.target.classList.remove('active');
+		} else {
+			tools.forEach(t => document.getElementById(`tool-${t}`).classList.remove('active'));
+			currentTool = tool;
+			e.target.classList.add('active');
+		}
+	});
 });
 
 document.getElementById('btn-play').addEventListener('click', () => {
@@ -141,38 +150,47 @@ app.view.addEventListener('mouseleave', () => {
 });
 
 function applyBrush(gridX, gridY, isDrag) {
-	if (Config.clickAction === 'select') {
+	let cell = world.grid[gridX][gridY];
+	let occupiedBy = cell.creature || cell.corpseList[0] || cell.foodList[0] || null;
+	
+	// Modified: If cell is occupied, just select it and don't overwrite
+	if (occupiedBy) {
 		if (!isDrag) {
-			let cell = world.grid[gridX][gridY];
-			selectedEntity = cell.creature || cell.corpseList[0] || cell.foodList[0] || null;
+			selectedEntity = occupiedBy;
 			updateInspector();
 		}
 		return;
 	}
 	
-	if (Config.clickAction === 'blank') {
-		world.clearCell(gridX, gridY);
-	} else if (Config.clickAction === 'food') {
-		if (world.grid[gridX][gridY].foodList.length === 0) {
+	// Modified: Add entity based on selected tool and update inspector
+	if (currentTool) {
+		if (currentTool === 'food') {
 			world.spawnFood(gridX, gridY);
-		}
-	} else if (Config.clickAction === 'red') {
-		if (!world.grid[gridX][gridY].occupied) {
+			selectedEntity = cell.foodList[cell.foodList.length - 1];
+		} else if (currentTool === 'red') {
 			let c = new Creature(gridX, gridY, 'red', Genome.createBaseRed());
 			world.creatures.push(c);
 			world.container.addChild(c.sprite);
 			
-			world.grid[gridX][gridY].occupied = true;
-			world.grid[gridX][gridY].creature = c;
-		}
-	} else if (Config.clickAction === 'blue') {
-		if (!world.grid[gridX][gridY].occupied) {
+			cell.occupied = true;
+			cell.creature = c;
+			selectedEntity = c;
+		} else if (currentTool === 'blue') {
 			let c = new Creature(gridX, gridY, 'blue', Genome.createBaseBlue());
 			world.creatures.push(c);
 			world.container.addChild(c.sprite);
 			
-			world.grid[gridX][gridY].occupied = true;
-			world.grid[gridX][gridY].creature = c;
+			cell.occupied = true;
+			cell.creature = c;
+			selectedEntity = c;
+		}
+		// Focus inspector on the newly added entity
+		updateInspector();
+	} else {
+		// If no tool is selected and clicked an empty cell
+		if (!isDrag) {
+			selectedEntity = null;
+			updateInspector();
 		}
 	}
 }
@@ -260,7 +278,7 @@ app.ticker.add(() => {
 	}
 	
 	selectionBox.clear();
-	if (selectedEntity && !selectedEntity.isDead && selectedEntity.sprite.parent) {
+	if (selectedEntity && !selectedEntity.isDead && selectedEntity.sprite && selectedEntity.sprite.parent) {
 		selectionBox.lineStyle(1, 0xFFFFFF, 1);
 		selectionBox.drawRect(
 			selectedEntity.x * Config.CELL_SIZE - 2,

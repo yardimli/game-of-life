@@ -33,14 +33,7 @@
 			
 			<hr style="border-color:#444; margin: 15px 0;">
 			
-			<label>Click Action:</label>
-			<select id="set-click-action">
-				<option value="select" selected>Select / Inspect</option>
-				<option value="red">Draw Red</option>
-				<option value="blue">Draw Blue</option>
-				<option value="food">Draw Food</option>
-				<option value="blank">Eraser (Blank)</option>
-			</select>
+			<!-- Removed Click Action Dropdown -->
 			
 			<label>Clock Speed: <span id="val-speed">1.0</span>x</label>
 			<input type="range" id="set-speed" min="0.1" max="5" step="0.1" value="1">
@@ -54,7 +47,6 @@
 			<label>Corpse Energy: <span id="val-corpse-energy">100%</span></label>
 			<input type="range" id="set-corpse-energy" min="0" max="500" step="10" value="100">
 			
-			<!-- Modified: Added toggle button and adjusted range for 0.01 to 5.0 -->
 			<label>
 				Random Food: <span id="val-food-rate">1.00 / turn</span>
 				<button id="btn-toggle-food" class="btn-tiny btn-success">ON</button>
@@ -73,7 +65,14 @@
 	</div>
 	
 	<!-- Right Panel: PixiJS Canvas -->
-	<div id="canvas-container"></div>
+	<div id="canvas-container">
+		<!-- Added: Overlay tools for canvas drawing -->
+		<div id="canvas-tools" class="canvas-overlay-tools">
+			<button id="tool-food" class="tool-btn" style="color: #55ff55;">Add Food</button>
+			<button id="tool-red" class="tool-btn" style="color: #ff4d4d;">Add Red</button>
+			<button id="tool-blue" class="tool-btn" style="color: #4da6ff;">Add Blue</button>
+		</div>
+	</div>
 </div>
 
 <!-- Main Game Logic -->

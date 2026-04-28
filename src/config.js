@@ -14,7 +14,7 @@ export const Config = {
 	corpseEnergyMultiplier: 1.0,
 	foodSpawnRate: 1,
 	foodSpawnEnabled: true, // Added: Toggle for random food
-	clickAction: 'select',
+	// Removed clickAction setting as it's replaced by canvas buttons
 	
 	// Initial Spawn Counts
 	INIT_BLUES: 20,
